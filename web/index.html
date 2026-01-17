@@ -5,44 +5,108 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Drone Live Stream</title>
     <style>
-      body { font-family: sans-serif; padding: 20px; background: #f0f0f0; }
-      .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-      h1 { margin-top: 0; }
-      video { width: 100%; background: black; border-radius: 4px; margin-top: 10px; }
-      .status { margin-top: 10px; padding: 10px; background: #eef; border-radius: 4px; font-family: monospace; }
-      code { background: #eee; padding: 2px 4px; border-radius: 3px; }
+      body {
+        font-family: sans-serif;
+        padding: 20px;
+        background: #f0f0f0;
+      }
+      .container {
+        max-width: 1100px;
+        margin: 0 auto;
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+      }
+      h1 {
+        margin-top: 0;
+      }
+      .players {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+        margin-top: 10px;
+      }
+      .player {
+        flex: 1 1 320px;
+        min-width: 0;
+      }
+      .player h2 {
+        margin: 0 0 4px 0;
+        font-size: 16px;
+      }
+      .frame-wrapper {
+        position: relative;
+        padding-top: 56.25%;
+        border-radius: 4px;
+        overflow: hidden;
+        background: black;
+      }
+      .frame-wrapper iframe,
+      .frame-wrapper video {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        border: 0;
+      }
+      .status {
+        margin-top: 10px;
+        padding: 10px;
+        background: #eef;
+        border-radius: 4px;
+        font-family: monospace;
+      }
+      code {
+        background: #eee;
+        padding: 2px 4px;
+        border-radius: 3px;
+      }
     </style>
   </head>
   <body>
     <div class="container">
       <h1>Drone Live Stream</h1>
       <p>
-        <strong>Ingest:</strong> <code>rtmp://&lt;HOST_IP&gt;:1935/live/drone</code><br>
+        <strong>Ingest:</strong>
+        <code>rtmp://&lt;HOST_IP&gt;:1935/live/drone</code><br />
+        <strong>Playback (HLS):</strong> <code>/hls/drone.m3u8</code><br />
         <strong>Playback (WebRTC):</strong> this page
       </p>
 
-      <div style="position: relative; padding-top: 56.25%; border-radius: 4px; overflow: hidden; background: black; margin-top: 10px;">
-        <iframe
-          id="webrtcFrame"
-          allow="autoplay; fullscreen"
-          style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0;"
-        ></iframe>
+      <div class="players">
+        <div class="player">
+          <h2>HLS (higher latency)</h2>
+          <div class="frame-wrapper">
+            <video id="hlsVideo" controls autoplay muted playsinline></video>
+          </div>
+        </div>
+        <div class="player">
+          <h2>WebRTC (low latency)</h2>
+          <div class="frame-wrapper">
+            <iframe id="webrtcFrame" allow="autoplay; fullscreen"></iframe>
+          </div>
+        </div>
       </div>
 
       <div id="status" class="status">Initializing...</div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
     <script>
-      const status = document.getElementById('status');
-      const frame = document.getElementById('webrtcFrame');
+      const status = document.getElementById("status");
+      const hlsVideo = document.getElementById("hlsVideo");
+      const frame = document.getElementById("webrtcFrame");
 
       function log(msg) {
         status.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
         console.log(msg);
       }
 
-      const host = window.location.hostname || 'localhost';
+      const host = window.location.hostname || "localhost";
       const webrtcUrl = `http://${host}:8889/drone`;
+      const hlsUrl = `/hls/drone.m3u8`;
 
       frame.src = webrtcUrl;
       frame.onload = () => {
@@ -51,6 +115,32 @@
       frame.onerror = () => {
         log(`Failed to load WebRTC player at ${webrtcUrl}`);
       };
+
+      if (window.Hls && Hls.isSupported()) {
+        const hls = new Hls();
+        hls.loadSource(hlsUrl);
+        hls.attachMedia(hlsVideo);
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          log("HLS manifest loaded");
+        });
+        hls.on(Hls.Events.ERROR, (_, data) => {
+          if (data.fatal) {
+            log(`HLS fatal error: ${data.type} - ${data.details}`);
+          } else {
+            log(`HLS error: ${data.details}`);
+          }
+        });
+      } else if (hlsVideo.canPlayType("application/vnd.apple.mpegurl")) {
+        hlsVideo.src = hlsUrl;
+        hlsVideo.addEventListener("loadedmetadata", () => {
+          log("HLS loaded natively");
+        });
+        hlsVideo.addEventListener("error", () => {
+          log("HLS video element error");
+        });
+      } else {
+        log("HLS not supported in this browser");
+      }
     </script>
   </body>
 </html>
