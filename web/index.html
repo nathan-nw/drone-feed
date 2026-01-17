@@ -18,67 +18,39 @@
       <h1>Drone Live Stream</h1>
       <p>
         <strong>Ingest:</strong> <code>rtmp://&lt;HOST_IP&gt;:1935/live/drone</code><br>
-        <strong>Playback:</strong> <code>/hls/drone.m3u8</code>
+        <strong>Playback (WebRTC):</strong> this page
       </p>
-      
-      <video id="video" controls autoplay muted playsinline></video>
-      
+
+      <div style="position: relative; padding-top: 56.25%; border-radius: 4px; overflow: hidden; background: black; margin-top: 10px;">
+        <iframe
+          id="webrtcFrame"
+          allow="autoplay; fullscreen"
+          style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0;"
+        ></iframe>
+      </div>
+
       <div id="status" class="status">Initializing...</div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
     <script>
-      const video = document.getElementById('video');
       const status = document.getElementById('status');
-      const streamKey = 'drone';
-      const hlsUrl = `/hls/${streamKey}.m3u8`;
+      const frame = document.getElementById('webrtcFrame');
 
       function log(msg) {
         status.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
         console.log(msg);
       }
 
-      if (Hls.isSupported()) {
-        const hls = new Hls();
-        hls.loadSource(hlsUrl);
-        hls.attachMedia(video);
-        hls.on(Hls.Events.MANIFEST_PARSED, () => {
-          log('Manifest loaded, found ' + hls.levels.length + ' quality level(s)');
-        });
-        hls.on(Hls.Events.ERROR, (event, data) => {
-          if (data.fatal) {
-            log(`Fatal error: ${data.type} - ${data.details}`);
-            switch (data.type) {
-            case Hls.ErrorTypes.NETWORK_ERROR:
-              // try to recover network error
-              log("Trying to recover network error...");
-              hls.startLoad();
-              break;
-            case Hls.ErrorTypes.MEDIA_ERROR:
-              log("Trying to recover media error...");
-              hls.recoverMediaError();
-              break;
-            default:
-              // cannot recover
-              hls.destroy();
-              break;
-            }
-          } else {
-             log(`Error: ${data.details}`);
-          }
-        });
-      }
-      else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-        video.src = hlsUrl;
-        video.addEventListener('loadedmetadata', () => {
-          log('Native HLS support loaded metadata');
-        });
-        video.addEventListener('error', (e) => {
-           log(`Video Error: ${video.error.message}`);
-        });
-      } else {
-        log('HLS not supported in this browser');
-      }
+      const host = window.location.hostname || 'localhost';
+      const webrtcUrl = `http://${host}:8889/drone`;
+
+      frame.src = webrtcUrl;
+      frame.onload = () => {
+        log(`WebRTC player loaded from ${webrtcUrl}`);
+      };
+      frame.onerror = () => {
+        log(`Failed to load WebRTC player at ${webrtcUrl}`);
+      };
     </script>
   </body>
 </html>
