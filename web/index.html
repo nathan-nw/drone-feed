@@ -1,0 +1,84 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Drone Live Stream</title>
+    <style>
+      body { font-family: sans-serif; padding: 20px; background: #f0f0f0; }
+      .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+      h1 { margin-top: 0; }
+      video { width: 100%; background: black; border-radius: 4px; margin-top: 10px; }
+      .status { margin-top: 10px; padding: 10px; background: #eef; border-radius: 4px; font-family: monospace; }
+      code { background: #eee; padding: 2px 4px; border-radius: 3px; }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Drone Live Stream</h1>
+      <p>
+        <strong>Ingest:</strong> <code>rtmp://&lt;HOST_IP&gt;:1935/live/drone</code><br>
+        <strong>Playback:</strong> <code>/hls/drone.m3u8</code>
+      </p>
+      
+      <video id="video" controls autoplay muted playsinline></video>
+      
+      <div id="status" class="status">Initializing...</div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <script>
+      const video = document.getElementById('video');
+      const status = document.getElementById('status');
+      const streamKey = 'drone';
+      const hlsUrl = `/hls/${streamKey}.m3u8`;
+
+      function log(msg) {
+        status.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+        console.log(msg);
+      }
+
+      if (Hls.isSupported()) {
+        const hls = new Hls();
+        hls.loadSource(hlsUrl);
+        hls.attachMedia(video);
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          log('Manifest loaded, found ' + hls.levels.length + ' quality level(s)');
+        });
+        hls.on(Hls.Events.ERROR, (event, data) => {
+          if (data.fatal) {
+            log(`Fatal error: ${data.type} - ${data.details}`);
+            switch (data.type) {
+            case Hls.ErrorTypes.NETWORK_ERROR:
+              // try to recover network error
+              log("Trying to recover network error...");
+              hls.startLoad();
+              break;
+            case Hls.ErrorTypes.MEDIA_ERROR:
+              log("Trying to recover media error...");
+              hls.recoverMediaError();
+              break;
+            default:
+              // cannot recover
+              hls.destroy();
+              break;
+            }
+          } else {
+             log(`Error: ${data.details}`);
+          }
+        });
+      }
+      else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        video.src = hlsUrl;
+        video.addEventListener('loadedmetadata', () => {
+          log('Native HLS support loaded metadata');
+        });
+        video.addEventListener('error', (e) => {
+           log(`Video Error: ${video.error.message}`);
+        });
+      } else {
+        log('HLS not supported in this browser');
+      }
+    </script>
+  </body>
+</html>
