@@ -1,58 +1,82 @@
-# Drone RTMP Ingest to WebRTC Prototype
+# Drone Live Stream Project
 
-A minimal, Docker-based setup that ingests RTMP from the drone and plays it in the browser via WebRTC.
+A prototype for low-latency drone video streaming, demonstrating the difference between **RTMP -> HLS** and **RTMP -> WebRTC** pipelines using Docker, Nginx, and MediaMTX.
 
-## Overview
+## 📚 Concepts & Technologies
 
-- **Ingest (RTMP from drone):** `rtmp://<HOST_IP>:1935/live/<STREAM_KEY>`
-- **Playback (WebRTC, browser):** `http://<HOST_IP>:8080`
-- **Underlying RTMP → WebRTC bridge:** MediaMTX pulling from Nginx RTMP
+This project serves as a practical comparison between two major video streaming technologies: **HLS** and **WebRTC**.
 
-## Quick Start
+### 1. HLS (HTTP Live Streaming)
+**What is it?**  
+HLS is a widely used streaming protocol developed by Apple. It works by breaking the continuous video stream into small file chunks (usually `.ts` files), typically 2-10 seconds long. A manifest file (`.m3u8`) tells the video player which chunks to play and in what order.
 
-1.  **Start the server:**
-    ```bash
-    docker compose up -d
-    ```
+**How it works here:**
+1. Drone sends video via RTMP.
+2. Nginx chops the video into small files on the disk (`data/hls/*.ts`).
+3. Browser requests the `.m3u8` playlist via standard HTTP.
+4. Browser downloads each video chunk via HTTP and plays them in sequence.
 
-2.  **Configure your Drone / Publisher:**
-    -  **Protocol:** RTMP
-    -  **URL:** `rtmp://<YOUR_MAC_LAN_IP>:1935/live`
-    -  **Stream Key:** `drone`
-    -  *Note: Make sure your Mac and Drone are on the same network.*
+**Pros/Cons:**
+*   ✅ **Reliable:** Uses TCP/HTTP. Buffering ensures smooth playback even with network jitter.
+*   ✅ **Scalable:** Since it's just static files, it can be cached by CDNs easily.
+*   ❌ **High Latency:** The player must wait for a chunk to be fully created and downloaded before playing. Typical latency is 10-30 seconds.
 
-3.  **Watch (WebRTC):**
-    Open [http://localhost:8080](http://localhost:8080) (or `http://<YOUR_MAC_LAN_IP>:8080` from another device).
-    The page embeds the MediaMTX WebRTC player for the `drone` stream.
+### 2. WebRTC (Web Real-Time Communication)
+**What is it?**  
+WebRTC is an open standard for real-time communication (video, voice, and data). Unlike HLS, it is designed for *interaction*, meaning it prioritizes low latency over perfect video quality.
 
-## Debug Checklist
+**How it works here:**
+1. Drone sends video via RTMP.
+2. MediaMTX acts as a bridge, transcoding the RTMP stream into RTP packets.
+3. MediaMTX establishes a direct peer connection with the browser using UDP (mostly).
+4. Video packets are streamed immediately as they arrive.
 
-If the stream isn't working, run these commands:
+**Pros/Cons:**
+*   ✅ **Ultra-Low Latency:** Latency is typically **under 500ms**. Essential for FPV (First Person View) flying or remote control.
+*   ❌ **No Buffering:** If packets are lost (bad network), the video will "glitch" or artifact immediately rather than pausing to buffer.
+*   ❌ **Complexity:** Requires a signaling process (SDP exchange) to set up the connection.
 
-1.  **Check logs:**
-    ```bash
-    docker compose logs -f
-    ```
-    *Look for "hls: publish" messages.*
+### 🏁 Comparison: Why is WebRTC Faster?
+The main speed difference comes from **Transport Layer** and **Buffering Strategy**:
 
-2.  **Verify ports are listening:**
-    ```bash
-    lsof -nP -iTCP:1935 -sTCP:LISTEN
-    lsof -nP -iTCP:8080 -sTCP:LISTEN
-    lsof -nP -iTCP:8889 -sTCP:LISTEN
-    ```
+| Feature | HLS | WebRTC |
+| :--- | :--- | :--- |
+| **Transport** | **TCP (HTTP)**: Guarantees delivery. If a packet is lost, it stops everything to retransmit it. | **UDP**: "Fire and forget". If a packet is lost, it skips it and moves to the next frame. |
+| **Delivery** | **Chunk-based**: Must wait for X seconds of video to be recorded before sending. | **Stream-based**: Sends individual packets immediately as they are generated. |
+| **Latency** | High (5s - 30s) | Low (< 0.5s) |
+| **Best For** | Netflix, YouTube, Live TV Sports (Passive viewing) | Zoom, Google Meet, Drone Control (Interactive) |
 
-3.  **Verify HLS files are being created:**
-    ```bash
-    ls -lah data/hls
-    ```
-    *You should see `drone.m3u8` and `.ts` files when streaming.*
+---
 
-4.  **Check network access:**
-    Ensure your firewall isn't blocking port 1935 (RTMP), 8080 (HTTP UI), or 8889/8189 (WebRTC).
+## 🚀 Quick Start
 
-## Notes
+### Prerequisites
+*   Docker & Docker Compose
 
--   Browsers cannot play RTMP directly. RTMP from the drone is ingested by Nginx and pulled by MediaMTX.
--   MediaMTX exposes a WebRTC endpoint that the HTML page embeds as a player.
--   This is a simple MVP optimized for local/LAN testing with a single drone stream.
+### 1. Start the Server
+```bash
+docker compose up -d
+```
+This spins up:
+*   **Nginx-RTMP** (Port 1935): Receives the video from the drone.
+*   **MediaMTX** (Port 8889/8189): Converts RTMP to WebRTC.
+*   **Web Server** (Port 8080): Serves the `index.html` player.
+
+### 2. Stream from Drone (or OBS)
+Configure your broadcasting software or drone with these settings:
+*   **Protocol:** RTMP
+*   **Address:** `rtmp://<YOUR_COMPUTER_IP>:1935/live`
+*   **Stream Key:** `drone`
+
+### 3. Watch
+Open your browser to: **[http://localhost:8080](http://localhost:8080)**
+
+You will see two players side-by-side:
+1.  **HLS Player:** High quality, but delayed.
+2.  **WebRTC Player:** Almost instant feedback.
+
+## 🛠️ Debugging
+If the stream isn't working:
+1.  **Check Logs:** `docker compose logs -f`
+2.  **Check Ports:** Ensure firewall allows 1935 (RTMP) and 8889/8189 (WebRTC).
+3.  **Check HLS Generation:** `ls -lah data/hls` (You should see `.ts` files appearing).
